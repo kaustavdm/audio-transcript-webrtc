@@ -1,0 +1,29 @@
+{
+  "name": "audio-transcript",
+  "version": "0.0.1-dev",
+  "description": "Live audio transcript over WebRTC audio call",
+  "private": true,
+  "scripts": {
+    "start": "node server",
+    "lint": "eslint .",
+    "format": "eslint --fix .",
+    "test": "npm run lint",
+    "certs": "openssl req -newkey rsa:2048 -nodes -keyout key.pem -x509 -days 365 -out cert.pem"
+  },
+  "author": "",
+  "license": "LicenseRef-LICENSE",
+  "devDependencies": {
+    "eslint": "^4.4.1",
+    "eslint-config-standard": "^10.2.1",
+    "eslint-plugin-import": "^2.7.0",
+    "eslint-plugin-node": "^5.1.1",
+    "eslint-plugin-promise": "^3.5.0",
+    "eslint-plugin-standard": "^3.0.1"
+  },
+  "dependencies": {
+    "@google-cloud/speech": "^0.10.2",
+    "express": "^4.15.4",
+    "mediasoup": "^1.2.8",
+    "ws": "^3.1.0"
+  }
+}
