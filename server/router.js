@@ -7,7 +7,8 @@ function Router (wss) {
   var peerConnections = {}
 
   this.mediaServer = mediasoup.Server({
-    logLevel: 'debug'
+    logLevel: 'debug',
+    logTags: ['info', 'rtp', 'rtcp', 'rtx']
   })
 
   function sendMsg (ws, type, payload) {
