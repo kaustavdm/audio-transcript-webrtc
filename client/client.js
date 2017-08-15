@@ -83,7 +83,7 @@ window.addEventListener('load', function () {
   }
 
   function handleOffer (payload) {
-    console.log(payload)
+    console.log('handleOffer', payload)
     var desc = new RTCSessionDescription(payload)
     console.log('Handling offer', desc)
     pc.setRemoteDescription(desc)
@@ -94,8 +94,7 @@ window.addEventListener('load', function () {
         console.log('Sending answer', answer)
         sendMsg('Answer', {
           username: username,
-          sdp: answer.sdp,
-          type: answer.type
+          answer: answer
         })
       })
       .catch(err => {
