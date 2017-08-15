@@ -39,15 +39,11 @@ const router = require('./router')
 // Create HTTPS app server
 const appServer = https.createServer(httpsConfig, app)
 
-// Load signaling engine
-const signaling = require('./signaling')
-
 // Setup websocket server
 const wss = new WebSocket.Server({ server: appServer })
 
 // Create room in mediasoup
-router.createRoom()
-  .then(room => signaling(router, room, wss))
+router(wss)
   .then(() => {
     // Launch app server
     appServer.listen(config.port, () => {
