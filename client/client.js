@@ -3,7 +3,7 @@
 
 window.addEventListener('load', function () {
   var pc = null
-
+  var audioContainer = document.getElementById('audio_container')
   var wsUrl = 'wss://' + window.location.hostname + ':' + window.location.port + '/'
 
   var username = 'user' + Math.round(Math.random() * 1000)
@@ -48,7 +48,10 @@ window.addEventListener('load', function () {
       }]
     })
 
-    pc.addStream(stream)
+    // pc.addStream(stream)
+    stream.getTracks().forEach(function addTracks (track) {
+      pc.addTrack(track, stream)
+    })
 
     pc.addEventListener('iceconnectionstatechange', function () {
       if (pc.iceConnectionState === 'failed') {
@@ -58,16 +61,23 @@ window.addEventListener('load', function () {
       }
     })
 
-    pc.addEventListener('addstream', function (event) {
-      console.log('peerconnection "addstream" event [stream:%o]', event.stream)
-      event.stream.addEventListener('addtrack', function (event) {
-        var track = event.track
-        console.log('stream "addtrack" event [track:%o]', track)
-        track.addEventListener('ended', function () {
-          console.log('track "ended" event [track:%o]', track)
-        })
-      })
-    })
+    pc.ontrack = function ontrackHandler (event) {
+      console.log('Ontrack', event)
+      var audioplayer = document.createElement('audio')
+      audioplayer.id = 'audio' + event.streams[0].id
+      audioplayer.setAttribute('autoplay', '')
+      audioplayer.setAttribute('controls', '')
+      audioplayer.srcObject = event.streams[0]
+      audioContainer.appendChild(audioplayer)
+    }
+
+    pc.onremovestream = function onremovestreamHandler (event) {
+      console.log('onRemoveStream', event)
+      var audioplayer = document.getElementById('audio' + event.stream.id)
+      if (audioplayer) {
+        audioplayer.parentNode.removeChild(audioplayer)
+      }
+    }
 
     return pc.createOffer({
       offerToReceiveAudio: 1,
@@ -107,7 +117,7 @@ window.addEventListener('load', function () {
   }
 
   function isPlanB () {
-    if (['chrome', 'chromium', 'opera', 'safari', 'msedge'].indexOf(adapter.browserDetails.browser)) {
+    if (['chrome', 'chromium', 'opera', 'safari', 'msedge'].indexOf(adapter.browserDetails.browser) >= 0) {
       return true
     } else {
       return false

@@ -75,7 +75,8 @@ function Router (wss) {
     let pc = new webrtc.RTCPeerConnection({
       peer: mPeer,
       usePlanB: payload.usePlanB || false,
-      maxBitrate: 48000
+      transportOptions: options.peerTransport,
+      maxBitrate: 32000
     })
 
     pc.setCapabilities(payload.sdp)
