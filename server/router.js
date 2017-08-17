@@ -1,7 +1,11 @@
 const mediasoup = require('mediasoup')
 const webrtc = mediasoup.webrtc
 const debug = require('debug')('router')
+const { Readable } = require('stream')
+const WebSocket = require('ws')
+const ffmpeg = require('fluent-ffmpeg')
 const options = require('./routerOpts')
+const googRecognizeStream = require('./google-speech')
 
 function Router (wss) {
   var peerConnections = {}
@@ -29,13 +33,60 @@ function Router (wss) {
   }
 
   function handleRoom (room) {
+    room.on('newpeer', peer => {
+      debug('newpeer', peer.id)
+      for (let transport of peer.transports) {
+        if (transport.closed) {
+          continue
+        }
+        transport.setMaxBitrate(48000)
+      }
+    })
     wss.on('connection', function (ws) {
+      let username = null
+      const readStream = new Readable({
+        objectMode: false,
+        read: () => true
+      })
+      const gstream = googRecognizeStream(function sendTranscript (transcript) {
+        broadcast({
+          type: 'Transcript',
+          payload: {
+            username: username,
+            transcript: transcript
+          }
+        })
+      })
+      let ffmpegTranscode = ffmpeg()
+        .input(readStream)
+        .noVideo()
+        .format('s16le')
+        .audioCodec('pcm_s16le')
+        .audioChannels(1)
+        .on('start', function (commandLine) {
+          debug('FFMPEG Spawned Ffmpeg with command: ' + commandLine)
+        })
+        .on('codecData', function (data) {
+          debug('FFMPEG codec data', data)
+        })
+        .on('end', function () {
+          debug('FFMPEG Finished processing')
+        })
       ws.isAlive = true
       ws.on('pong', function () {
         this.isAlive = true
       })
-
+      ws.on('close', () => {
+        debug('closing ws')
+        if (readStream) {
+          readStream.push(null)
+        }
+      })
       ws.on('message', function (data) {
+        if (data instanceof Buffer) {
+          readStream.push(data)
+          return
+        }
         let message
         try {
           message = JSON.parse(data)
@@ -49,10 +100,15 @@ function Router (wss) {
         }
         switch (message.type) {
           case 'Start':
+            username = message.payload.username
             handleParticipant(message.payload, ws, room)
             break
           case 'Answer':
             handleAnswer(message.payload, ws, room)
+              .then(() => {
+                debug('HandleAnswer is complete')
+                ffmpegTranscode.pipe(gstream)
+              })
             break
         }
       })
@@ -76,13 +132,12 @@ function Router (wss) {
       peer: mPeer,
       usePlanB: payload.usePlanB || false,
       transportOptions: options.peerTransport,
-      maxBitrate: 32000
+      maxBitrate: 48000
     })
 
     pc.setCapabilities(payload.sdp)
       .then(() => {
         sendSDPOffer(payload, pc, ws)
-        setReceiver(mPeer)
       })
       .catch(err => {
         debug('Error setting peer capabilities', err)
@@ -101,19 +156,6 @@ function Router (wss) {
       pc.close()
     })
     peerConnections[payload.username] = pc
-  }
-
-  function setReceiver (mPeer) {
-    mPeer.createTransport()
-      .then(transport => {
-        const receiver = mPeer.RtpReceiver('audio', transport)
-        receiver.on('rtpraw', packet => {
-          debug('Received RTP packet', packet)
-        })
-      })
-      .catch(err => {
-        debug(`Error creating transport for ${mPeer.id}`, err)
-      })
   }
 
   function sendSDPOffer (payload, pc, ws) {
@@ -140,25 +182,24 @@ function Router (wss) {
     }
     const desc = new webrtc.RTCSessionDescription(payload.answer)
     debug(`Processed answer from ${payload.username}`)
-    pc.setRemoteDescription(desc)
+    return pc.setRemoteDescription(desc)
       .then(() => {
         debug('setRemoteDescription for Answer OK username' + payload.username)
         debug('-- peers in the room = ' + room.peers.length)
-
-        dumpPeer(pc.peer, 'peer.dump after setRemoteDescription(answer):');
+        dumpPeer(pc.peer, 'peer.dump after setRemoteDescription(answer):')
       })
       .catch(err => {
         debug('setRemoteDescription for Answer ERROR:', err)
       })
   }
 
-  // function broadcast (data) {
-  //   wss.clients.forEach(function each (client) {
-  //     if (client.readyState === WebSocket.OPEN) {
-  //       client.send(data)
-  //     }
-  //   })
-  // }
+  function broadcast (data) {
+    wss.clients.forEach(function each (client) {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify(data))
+      }
+    })
+  }
 
   function dumpPeer (peer, caption) {
     debug(caption + ' transports=%d receivers=%d senders=%d',
