@@ -12,17 +12,16 @@ const request = {
 
 // Create a recognize stream
 function recognizeStream (broadcast) {
+  debug('Creating new stream')
   const speech = Speech()
   return speech.streamingRecognize(request)
-    .on('error', console.error)
+    .on('error', err => debug('Error in recognize stream', err.message))
+    .on('end', () => debug('Ending recognize stream'))
     .on('data', function (data) {
       debug('Data received: %j', data)
       if (!data.error && data.results && data.results.length > 0) {
         broadcast(data.results[0].alternatives[0].transcript)
       }
-    })
-    .on('pipe', function () {
-      debug('Receiving')
     })
 }
 

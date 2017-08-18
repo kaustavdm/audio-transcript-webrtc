@@ -48,7 +48,7 @@ function Router (wss) {
         objectMode: false,
         read: () => true
       })
-      const gstream = googRecognizeStream(function sendTranscript (transcript) {
+      function sendTranscript (transcript) {
         broadcast({
           type: 'Transcript',
           payload: {
@@ -56,7 +56,7 @@ function Router (wss) {
             transcript: transcript
           }
         })
-      })
+      }
       let ffmpegTranscode = ffmpeg()
         .input(readStream)
         .noVideo()
@@ -72,6 +72,22 @@ function Router (wss) {
         .on('end', function () {
           debug('FFMPEG Finished processing')
         })
+        .on('error', error => {
+          debug('FFMPEG error', error.message)
+        })
+        .pipe()
+      let gstream = googRecognizeStream(sendTranscript)
+      ffmpegTranscode.pipe(gstream).on('error', error => {
+        debug('FFMPEG piping error', error.message)
+      })
+      let gstreamInterval = setInterval(function recreateGoogleSpeechStream () {
+        debug('Re-creating new Google speech stream')
+        let _gstream = googRecognizeStream(sendTranscript)
+        ffmpegTranscode.unpipe(gstream)
+        gstream.end()
+        gstream = _gstream
+        ffmpegTranscode.pipe(gstream)
+      }, 50000)
       ws.isAlive = true
       ws.on('pong', function () {
         this.isAlive = true
@@ -80,6 +96,12 @@ function Router (wss) {
         debug('closing ws')
         if (readStream) {
           readStream.push(null)
+        }
+        if (gstream) {
+          gstream.end()
+        }
+        if (gstreamInterval) {
+          clearInterval(gstreamInterval)
         }
       })
       ws.on('message', function (data) {
@@ -107,7 +129,6 @@ function Router (wss) {
             handleAnswer(message.payload, ws, room)
               .then(() => {
                 debug('HandleAnswer is complete')
-                ffmpegTranscode.pipe(gstream)
               })
             break
         }
