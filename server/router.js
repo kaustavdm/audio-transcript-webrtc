@@ -32,6 +32,10 @@ function Router (wss) {
       .catch((err) => debug('createRoom() ERROR', err))
   }
 
+  // function userLanguage (headerString) {
+  //   const validlang = ['en-US', 'en-GB', 'en-IN', ]
+  // }
+
   function handleRoom (room) {
     room.on('newpeer', peer => {
       debug('newpeer', peer.id)
@@ -42,52 +46,63 @@ function Router (wss) {
         transport.setMaxBitrate(48000)
       }
     })
-    wss.on('connection', function (ws) {
+    wss.on('connection', function (ws, req) {
+      // let userlanguage = req.headers
       let username = null
+      let ffmpegTranscode = null
+      let gstream = null
+      let gstreamInterval = null
+      let languageCode = 'en-US'
       const readStream = new Readable({
         objectMode: false,
         read: () => true
       })
-      function sendTranscript (transcript) {
+
+      function sendTranscript (output) {
         broadcast({
           type: 'Transcript',
           payload: {
             username: username,
-            transcript: transcript
+            transcript: output.transcript,
+            isFinal: output.isFinal
           }
         })
       }
-      let ffmpegTranscode = ffmpeg()
-        .input(readStream)
-        .noVideo()
-        .format('s16le')
-        .audioCodec('pcm_s16le')
-        .audioChannels(1)
-        .on('start', function (commandLine) {
-          debug('FFMPEG Spawned Ffmpeg with command: ' + commandLine)
+
+      function setupEncoder () {
+        ffmpegTranscode = ffmpeg()
+          .input(readStream)
+          .noVideo()
+          .format('s16le')
+          .audioCodec('pcm_s16le')
+          .audioChannels(1)
+          .on('start', function (commandLine) {
+            debug('FFMPEG Spawned Ffmpeg with command: ' + commandLine)
+          })
+          .on('codecData', function (data) {
+            debug('FFMPEG codec data', data)
+          })
+          .on('end', function () {
+            debug('FFMPEG Finished processing')
+          })
+          .on('error', error => {
+            debug('FFMPEG error', error.message)
+          })
+          .pipe()
+        gstream = googRecognizeStream(sendTranscript, { languageCode: languageCode })
+        ffmpegTranscode.pipe(gstream).on('error', error => {
+          debug('FFMPEG piping error', error.message)
         })
-        .on('codecData', function (data) {
-          debug('FFMPEG codec data', data)
-        })
-        .on('end', function () {
-          debug('FFMPEG Finished processing')
-        })
-        .on('error', error => {
-          debug('FFMPEG error', error.message)
-        })
-        .pipe()
-      let gstream = googRecognizeStream(sendTranscript)
-      ffmpegTranscode.pipe(gstream).on('error', error => {
-        debug('FFMPEG piping error', error.message)
-      })
-      let gstreamInterval = setInterval(function recreateGoogleSpeechStream () {
-        debug('Re-creating new Google speech stream')
-        let _gstream = googRecognizeStream(sendTranscript)
-        ffmpegTranscode.unpipe(gstream)
-        gstream.end()
-        gstream = _gstream
-        ffmpegTranscode.pipe(gstream)
-      }, 50000)
+        gstreamInterval = setInterval(function recreateGoogleSpeechStream () {
+          debug('Re-creating new Google speech stream')
+          let _gstream = googRecognizeStream(sendTranscript, { languageCode: languageCode })
+          ffmpegTranscode.unpipe(gstream)
+          gstream.end()
+          gstream = _gstream
+          ffmpegTranscode.pipe(gstream)
+        }, 50000)
+      }
+
       ws.isAlive = true
       ws.on('pong', function () {
         this.isAlive = true
@@ -123,6 +138,8 @@ function Router (wss) {
         switch (message.type) {
           case 'Start':
             username = message.payload.username
+            languageCode = message.payload.languageCode
+            setupEncoder()
             handleParticipant(message.payload, ws, room)
             break
           case 'Answer':
@@ -155,6 +172,8 @@ function Router (wss) {
       transportOptions: options.peerTransport,
       maxBitrate: 48000
     })
+
+    pc.languageCode = payload.languageCode
 
     pc.setCapabilities(payload.sdp)
       .then(() => {

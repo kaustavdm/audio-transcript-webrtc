@@ -7,6 +7,8 @@ window.addEventListener('load', function () {
   var recorder = null
   var audioContainer = document.getElementById('audio_container')
   var transcriptContainer = document.getElementById('transcript_container')
+  var joinbtn = document.getElementById('joinbtn')
+  var languageCodeInput = document.getElementById('languageCode')
   var wsUrl = 'wss://' + window.location.hostname + ':' + window.location.port + '/'
 
   var username = 'user' + Math.round(Math.random() * 1000)
@@ -59,7 +61,7 @@ window.addEventListener('load', function () {
     transcriptContainer.appendChild(t)
   }
 
-  function getUserMedia () {
+  function startCall () {
     return navigator.mediaDevices.getUserMedia({ audio: true, video: false })
       .then(stream => {
         localStream = stream
@@ -120,6 +122,7 @@ window.addEventListener('load', function () {
       .then(function (desc) {
         sendMsg('Start', {
           username: username,
+          languageCode: languageCodeInput.value,
           sdp: desc.sdp,
           usePlanB: isPlanB()
         })
@@ -140,8 +143,10 @@ window.addEventListener('load', function () {
           username: username,
           answer: answer
         })
-        if (recorder) {
-          recorder.start(100)
+        if (recorder && recorder.state === 'inactive') {
+          recorder.start(50)
+        } else if (recorder && recorder.state === 'paused') {
+          recorder.resume()
         }
       })
       .catch(err => {
@@ -170,7 +175,14 @@ window.addEventListener('load', function () {
 
   ws.addEventListener('open', function () {
     console.log('WebSocket connection opened to ' + wsUrl)
-    getUserMedia()
+    joinbtn.removeAttribute('disabled')
+    languageCodeInput.removeAttribute('disabled')
+  })
+
+  joinbtn.addEventListener('click', function () {
+    joinbtn.setAttribute('disabled', 'disabled')
+    languageCodeInput.setAttribute('disabled', 'disabled')
+    startCall()
       .then(createPeerConnection)
   })
 })
